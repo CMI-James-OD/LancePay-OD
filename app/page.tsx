@@ -2,11 +2,15 @@
 
 import React, { useRef } from 'react';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { motion, useInView } from 'framer-motion';
 import { ArrowRight, CheckCircle2, Zap, ShieldCheck, Globe, CreditCard, FileText, Clock } from 'lucide-react';
 import { Navbar } from '@/components/Navbar';
 import { Footer } from '@/components/Footer';
 import { useCountUp } from '@/hooks/useCountUp';
+
+// Dynamic import to avoid SSR issues with canvas
+const DotGrid = dynamic(() => import('@/components/DotGrid'), { ssr: false });
 
 // --- ANIMATION VARIANTS ---
 const fadeInUp = {
@@ -40,6 +44,24 @@ const staggerContainer = {
 function HeroSection() {
   return (
     <section className="relative pt-32 pb-20 lg:pt-48 lg:pb-32 overflow-hidden bg-white">
+      {/* DotGrid Background */}
+      <DotGrid
+        dotSize={8}
+        gap={28}
+        baseColor="#e5e7eb"
+        activeColor="#1c4abdff"
+        proximity={100}
+        speedTrigger={60}
+        shockRadius={80}
+        shockStrength={2}
+        returnDuration={1.0}
+      />
+      
+      {/* White vignette overlay to fade edges */}
+      <div className="absolute inset-0 pointer-events-none" style={{
+        background: 'radial-gradient(ellipse at center, transparent 30%, rgba(255,255,255,0.7) 70%, rgba(255,255,255,1) 100%)'
+      }} />
+      
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center relative z-10">
         <motion.div
           initial={{ opacity: 0, y: 10 }}
@@ -108,7 +130,7 @@ function HeroSection() {
         </motion.div>
 
         <motion.p
-          className="mt-6 text-sm text-brand-muted"
+          className="mt-6 text-sm text-brand-gray font-medium"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.8, duration: 0.6 }}

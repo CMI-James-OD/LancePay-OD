@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Menu, X } from 'lucide-react';
 import Link from 'next/link';
 
@@ -69,47 +69,82 @@ export function Navbar() {
 
           {/* Mobile menu button */}
           <div className="md:hidden flex items-center">
-            <button
+            <motion.button
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
               className="text-brand-black p-2"
               aria-label="Toggle menu"
+              whileTap={{ scale: 0.95 }}
             >
-              {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
-            </button>
+              <AnimatePresence mode="wait">
+                {isMobileMenuOpen ? (
+                  <motion.div
+                    key="close"
+                    initial={{ rotate: -90, opacity: 0 }}
+                    animate={{ rotate: 0, opacity: 1 }}
+                    exit={{ rotate: 90, opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <X size={24} />
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="menu"
+                    initial={{ rotate: 90, opacity: 0 }}
+                    animate={{ rotate: 0, opacity: 1 }}
+                    exit={{ rotate: -90, opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <Menu size={24} />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.button>
           </div>
         </div>
       </div>
 
       {/* Mobile Navigation */}
-      {isMobileMenuOpen && (
-        <motion.div
-          initial={{ opacity: 0, height: 0 }}
-          animate={{ opacity: 1, height: 'auto' }}
-          exit={{ opacity: 0, height: 0 }}
-          className="md:hidden bg-white border-b border-brand-border"
-        >
-          <div className="px-4 pt-2 pb-6 space-y-4">
-            {navLinks.map((link) => (
-              <a
-                key={link.name}
-                href={link.href}
-                className="block text-brand-gray hover:text-brand-black font-medium py-2"
-                onClick={() => setIsMobileMenuOpen(false)}
+      <AnimatePresence>
+        {isMobileMenuOpen && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.3, ease: 'easeInOut' }}
+            className="md:hidden bg-white border-b border-brand-border overflow-hidden"
+          >
+            <div className="px-4 pt-2 pb-6 space-y-2">
+              {navLinks.map((link, i) => (
+                <motion.a
+                  key={link.name}
+                  href={link.href}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: i * 0.1 }}
+                  className="block text-brand-gray hover:text-brand-black font-medium py-3"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                >
+                  {link.name}
+                </motion.a>
+              ))}
+              <motion.div 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.2 }}
+                className="pt-4 border-t border-brand-border flex flex-col space-y-4"
               >
-                {link.name}
-              </a>
-            ))}
-            <div className="pt-4 border-t border-brand-border flex flex-col space-y-4">
-              <Link href="/login" className="text-brand-black font-medium block">
-                Sign In
-              </Link>
-              <Link href="/login" className="w-full h-11 px-6 text-base inline-flex items-center justify-center rounded-lg font-medium bg-brand-black text-white hover:bg-gray-900">
-                Get Started
-              </Link>
+                <Link href="/login" className="text-brand-black font-medium block py-2">
+                  Sign In
+                </Link>
+                <Link href="/login" className="w-full h-12 px-6 text-base inline-flex items-center justify-center rounded-xl font-medium bg-brand-black text-white hover:bg-gray-900 transition-colors">
+                  Get Started
+                </Link>
+              </motion.div>
             </div>
-          </div>
-        </motion.div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.nav>
   );
 }
+

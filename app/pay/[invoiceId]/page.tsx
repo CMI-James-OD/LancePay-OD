@@ -47,26 +47,16 @@ export default function PaymentPage({ params }: { params: Promise<{ invoiceId: s
     setStatus('paying')
     
     try {
+      // Open MoonPay overlay - payment completion is handled via webhook
       await openWidget({
         walletAddress: invoice.walletAddress,
         amount: invoice.amount,
         currencyCode: 'usdc_base',
-        onSuccess: async () => {
-          // Mark invoice as paid
-          const res = await fetch(`/api/pay/${invoiceId}`, { method: 'POST' })
-          if (res.ok) {
-            setStatus('success')
-          } else {
-            setStatus('error')
-            setError('Failed to confirm payment')
-          }
-        },
-        onClose: () => {
-          if (status === 'paying') {
-            setStatus('ready')
-          }
-        }
+        invoiceId: invoiceId,
       })
+      // SDK shows overlay, user completes payment
+      // MoonPay webhook will mark invoice as paid
+      setStatus('ready')
     } catch {
       setStatus('error')
       setError('Payment failed. Please try again.')
