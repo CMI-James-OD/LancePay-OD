@@ -38,7 +38,6 @@ export async function POST(request: NextRequest) {
         if (user.backupCodes && user.backupCodes.length > 0) {
             // We need to decrypt all backup codes to check. 
             // In a more optimized way we might hash them, but sticking to "encrypt/decrypt" prompt requirement.
-            // Wait, prompt said "Array of encrypted backup codes".
 
             let usedBackupCodeIndex = -1;
             for (let i = 0; i < user.backupCodes.length; i++) {
