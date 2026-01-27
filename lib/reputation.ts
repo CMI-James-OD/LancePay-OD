@@ -185,6 +185,13 @@ export async function updateUserTrustScore(
     return trustScore
   } catch (error) {
     console.error(`Failed to update trust score for user ${userId}:`, error)
+    if (error instanceof Error) {
+      console.error('Error details:', error.message, error.stack)
+      // Check if it's a table not found error
+      if (error.message.includes('does not exist') || error.message.includes('Unknown table')) {
+        console.error('⚠️  ERROR: La tabla UserTrustScore no existe. Ejecuta: npx prisma migrate dev')
+      }
+    }
     // Don't throw - graceful degradation
     return null
   }
@@ -206,7 +213,10 @@ export async function getUserTrustScoreData(
     // If no score exists, calculate it
     if (!trustScore) {
       const updated = await updateUserTrustScore(userId)
-      if (!updated) return null
+      if (!updated) {
+        console.error(`Failed to create trust score for user ${userId}`)
+        return null
+      }
       trustScore = updated
     }
 
@@ -222,6 +232,9 @@ export async function getUserTrustScoreData(
     }
   } catch (error) {
     console.error(`Failed to get trust score data for user ${userId}:`, error)
+    if (error instanceof Error) {
+      console.error('Error details:', error.message, error.stack)
+    }
     return null
   }
 }
