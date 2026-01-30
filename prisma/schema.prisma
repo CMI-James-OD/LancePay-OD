@@ -39,6 +39,7 @@ model User {
   auditEvents      AuditEvent[]
   savingsGoals     SavingsGoal[]
   payoutBatches    PayoutBatch[]
+  manualPayments   ManualPayment[] @relation("ManualPaymentVerifier")
 }
 
 model Wallet {
@@ -100,6 +101,7 @@ model Invoice {
   encryptedPayload   String?  @db.Text // AES-256-GCM encrypted JSON blob
   decryptionSalt     String?  // Salt used in key derivation (not the key itself)
   messages                InvoiceMessage[]
+  manualPayments          ManualPayment[]
 }
 
 model InvoiceMessage {
@@ -367,6 +369,27 @@ model SavingsGoal {
 
   @@index([userId])
   @@index([status])
+}
+
+model ManualPayment {
+  id          String    @id @default(uuid())
+  invoiceId   String
+  clientName  String    @db.VarChar(100)
+  amountPaid  Decimal   @db.Decimal(18, 2)
+  currency    String    @default("NGN") @db.VarChar(10)
+  receiptUrl  String    @db.VarChar(512)
+  status      String    @default("pending") @db.VarChar(20)
+  notes       String?   @db.Text
+  createdAt   DateTime  @default(now())
+  verifiedAt  DateTime?
+  verifiedBy  String?
+
+  invoice  Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  verifier User?   @relation("ManualPaymentVerifier", fields: [verifiedBy], references: [id])
+
+  @@index([invoiceId])
+  @@index([status])
+  @@index([createdAt])
 }
 
 model ClientReputation {
