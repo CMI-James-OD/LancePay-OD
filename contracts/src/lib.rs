@@ -7,6 +7,8 @@ pub mod path_payment;
 pub mod gasless;
 pub mod upgrade_utils;
 pub mod dispute_resolution;
+pub mod trustline;
+
 
 
 
