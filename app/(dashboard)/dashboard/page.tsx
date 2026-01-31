@@ -21,7 +21,9 @@ interface Transaction {
 }
 
 export default function DashboardPage() {
-  const [balance, setBalance] = useState(null);
+  const [balance, setBalance] = useState<{ usdc: string; usd: string } | null>(
+    null,
+  );
   const [profile, setProfile] = useState<{ name?: string } | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
