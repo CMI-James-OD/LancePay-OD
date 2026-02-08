@@ -76,8 +76,8 @@ export async function sendAdminAlertEmail(params: AdminAlertParams) {
         <div style="margin-top:16px;">
           <strong style="color:#111;">Context:</strong>
           <pre style="background:#f6f8fa;padding:12px;border-radius:8px;overflow:auto;font-size:12px;">${escapeHtml(
-            JSON.stringify(params.context, null, 2)
-          )}</pre>
+        JSON.stringify(params.context, null, 2)
+      )}</pre>
         </div>
       `
       : ''
@@ -271,7 +271,7 @@ export async function sendDisputeResolvedEmail(params: {
   const refundText = params.action === 'refund_partial' && params.refundAmount
     ? `<p><strong>Refund Amount:</strong> $${params.refundAmount.toFixed(2)} ${params.currency || 'USD'}</p>`
     : ''
-  
+
   return sendEmail({
     to: params.to,
     subject: `✅ Dispute Resolved - ${params.invoiceNumber}`,
@@ -358,6 +358,128 @@ export async function sendDisputeMessageEmail(params: {
           <p style="margin: 0;">${params.message}</p>
         </div>
         <p style="color: #666; font-size: 12px;">LancePay - Get paid globally, withdraw locally</p>
+      </div>
+    `,
+  })
+}
+
+// Invoice chat message email
+export async function sendInvoiceMessageEmail(params: {
+  to: string
+  name?: string
+  invoiceNumber: string
+  message: string
+  senderName: string
+}) {
+  return sendEmail({
+    to: params.to,
+    subject: `💬 New Message on Invoice ${params.invoiceNumber}`,
+    html: `
+      <div style="font-family: system-ui, sans-serif; max-width: 500px; margin: 0 auto; padding: 24px;">
+        <h2>New Message</h2>
+        <p>Hi ${params.name || 'there'},</p>
+        <p>You have a new message on invoice <strong>${params.invoiceNumber}</strong>.</p>
+        <p><strong>From:</strong> ${params.senderName}</p>
+        <div style="background: #f3f4f6; padding: 16px; border-radius: 8px; margin: 16px 0;">
+          <p style="margin: 0;">${params.message}</p>
+        </div>
+        <p style="color: #666; font-size: 12px;">LancePay - Get paid globally, withdraw locally</p>
+      </div>
+    `,
+  })
+}
+
+// Manual payment notification - freelancer receives when client submits receipt
+export async function sendManualPaymentNotification(params: {
+  to: string
+  freelancerName: string
+  invoiceNumber: string
+  clientName: string
+  amountPaid: number
+  currency: string
+  notes?: string
+}) {
+  return sendEmail({
+    to: params.to,
+    subject: `🔔 Payment Proof Received - ${params.invoiceNumber}`,
+    html: `
+      <div style="font-family: system-ui, sans-serif; max-width: 500px; margin: 0 auto; padding: 24px;">
+        <h2>Payment Proof Received</h2>
+        <p>Hi ${params.freelancerName},</p>
+        <p>A client has submitted proof of bank transfer payment for invoice <strong>${params.invoiceNumber}</strong>.</p>
+
+        <div style="background: #F3F4F6; padding: 20px; border-radius: 12px; margin: 20px 0;">
+          <p style="margin: 5px 0;"><strong>Client:</strong> ${params.clientName}</p>
+          <p style="margin: 5px 0;"><strong>Amount:</strong> ${params.currency} ${params.amountPaid.toLocaleString()}</p>
+          ${params.notes ? `<p style="margin: 5px 0;"><strong>Notes:</strong> ${params.notes}</p>` : ''}
+        </div>
+
+        <p><strong>Action Required:</strong> Please review the payment receipt and confirm or reject it from your dashboard.</p>
+
+        <p style="color: #666; font-size: 12px; margin-top: 20px;">LancePay - Get paid globally, withdraw locally</p>
+      </div>
+    `,
+  })
+}
+
+// Manual payment verified - client receives confirmation
+export async function sendManualPaymentVerifiedEmail(params: {
+  to: string
+  clientName: string
+  invoiceNumber: string
+  amountPaid: number
+  currency: string
+}) {
+  return sendEmail({
+    to: params.to,
+    subject: `✅ Payment Confirmed - ${params.invoiceNumber}`,
+    html: `
+      <div style="font-family: system-ui, sans-serif; max-width: 500px; margin: 0 auto; padding: 24px;">
+        <h2 style="color: #10B981;">Payment Confirmed! ✅</h2>
+        <p>Hi ${params.clientName},</p>
+        <p>Great news! Your bank transfer payment for invoice <strong>${params.invoiceNumber}</strong> has been verified.</p>
+
+        <div style="background: #ECFDF5; border: 1px solid #A7F3D0; padding: 20px; border-radius: 12px; margin: 20px 0;">
+          <p style="margin: 5px 0; color: #065F46;"><strong>Amount Paid:</strong> ${params.currency} ${params.amountPaid.toLocaleString()}</p>
+          <p style="margin: 5px 0; color: #065F46;"><strong>Status:</strong> Verified & Credited</p>
+        </div>
+
+        <p>The freelancer has received the payment in USDC on the Stellar network.</p>
+
+        <p style="color: #666; font-size: 12px; margin-top: 20px;">Thank you for using LancePay!</p>
+      </div>
+    `,
+  })
+}
+
+// Internal transfer received - recipient receives notification of USDC transfer
+export async function sendTransferReceivedEmail(params: {
+  to: string
+  recipientName: string
+  senderName: string
+  amount: number
+  currency: string
+  memo?: string
+}) {
+  return sendEmail({
+    to: params.to,
+    subject: `💸 You received ${params.currency} ${params.amount.toFixed(2)} from ${params.senderName}`,
+    html: `
+      <div style="font-family: system-ui, sans-serif; max-width: 500px; margin: 0 auto; padding: 24px;">
+        <h2 style="color: #10B981;">Transfer Received! 💸</h2>
+        <p>Hi ${params.recipientName},</p>
+        <p>Great news! You've received a transfer from <strong>${params.senderName}</strong>.</p>
+
+        <div style="background: #ECFDF5; border: 1px solid #A7F3D0; padding: 24px; border-radius: 12px; text-align: center; margin: 20px 0;">
+          <div style="font-size: 32px; font-weight: bold; color: #065F46;">$${params.amount.toFixed(2)}</div>
+          <div style="color: #065F46;">${params.currency}</div>
+        </div>
+        
+        ${params.memo ? `<p><strong>Memo:</strong> ${params.memo}</p>` : ''}
+
+        <p>The funds are now available in your LancePay wallet.</p>
+
+        <p style="color: #666; font-size: 12px; margin-top: 20px;">LancePay - Get paid globally, withdraw locally</p>
       </div>
     `,
   })
