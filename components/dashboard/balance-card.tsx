@@ -27,11 +27,16 @@ export function BalanceCard({ balance, isLoading, xlmBalance }: BalanceCardProps
     )
   }
 
+  const formatter = new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: currency,
+  });
+
   return (
     <div className="bg-white rounded-2xl border border-brand-border p-6">
-      <p className="text-sm text-brand-gray font-medium mb-1">Available Balance</p>
+      <p className="text-sm text-brand-gray font-medium mb-1">Total Portfolio Value</p>
       <h2 className="text-4xl font-bold text-brand-black mb-2">
-        {balance?.available.display || '$0.00'}
+        {formatter.format(totalValue)}
       </h2>
       <p className="text-sm text-brand-gray mb-3">
         ≈ {balance?.localEquivalent.display || '₦0'}
