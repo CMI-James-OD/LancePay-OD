@@ -75,9 +75,13 @@ model User {
   auditEvents      AuditEvent[]
   savingsGoals     SavingsGoal[]
   incomeVerifications IncomeVerification[]  
-  payoutBatches    PayoutBatch[]
-  manualPayments   ManualPayment[] @relation("ManualPaymentVerifier")
+  payoutBatches       PayoutBatch[]
+  manualPayments      ManualPayment[] @relation("ManualPaymentVerifier")
   collaborations   InvoiceCollaborator[] @relation("SubContractorCollaborations")
+
+  walletSigners        WalletSigner[]
+  multisigProposals    MultisigProposal[] @relation("MultisigProposer")
+  proposalSignatures   ProposalSignature[]
   withdrawalTransactions WithdrawalTransaction[]
   anchorSessions   AnchorSession[]
 }
