@@ -202,13 +202,65 @@ export async function sendUSDCPayment(
 }
 
 /**
- * Issue a soulbound token (non-transferable badge) to a recipient
- * This creates a trustline, sends 1 unit of the badge asset, and locks the recipient's trustline
+ * Prepare an unsigned trustline transaction XDR for the recipient to sign.
+ *
+ * In the non-custodial badge issuance flow this is Step 1: the recipient must
+ * create a trustline for the badge asset (limit = 1) by signing this transaction
+ * client-side (e.g. via WalletConnect) and submitting it to Stellar themselves.
+ * The server never touches the recipient's secret key.
+ *
+ * @param recipientPublicKey Recipient's public key
+ * @param issuerPublicKey Badge issuer's public key
+ * @param badgeAssetCode Asset code for the badge (max 12 chars)
+ * @param memo Optional memo (truncated to 28 bytes)
+ * @returns Unsigned transaction XDR string
+ */
+export async function prepareBadgeTrustlineXdr(
+  recipientPublicKey: string,
+  issuerPublicKey: string,
+  badgeAssetCode: string,
+  memo?: string,
+): Promise<string> {
+  const badgeAsset = new Asset(badgeAssetCode, issuerPublicKey);
+  const baseFee = (await server.fetchBaseFee()).toString();
+  const safeMemo = sanitizeStellarTextMemo(memo);
+
+  const recipientAccount = await server.loadAccount(recipientPublicKey);
+  const txBuilder = new TransactionBuilder(recipientAccount, {
+    fee: baseFee,
+    networkPassphrase: STELLAR_NETWORK,
+  }).addOperation(
+    Operation.changeTrust({
+      asset: badgeAsset,
+      limit: "1",
+    }),
+  ).setTimeout(30);
+
+  if (safeMemo) {
+    txBuilder.addMemo(Memo.text(safeMemo));
+  }
+
+  return txBuilder.build().toXDR();
+}
+
+/**
+ * Issue a soulbound token (non-transferable badge) to a recipient.
+ *
+ * Soulbound enforcement mechanism:
+ * - The issuer account must have AUTH_REQUIRED, AUTH_REVOCABLE, and AUTH_CLAWBACK_ENABLED
+ *   flags set (via configureBadgeIssuer) before calling this function.
+ * - The recipient first creates a trustline for the badge asset (limit = 1).
+ * - The issuer then calls setTrustLineFlags to AUTHORIZE the recipient's trustline —
+ *   this is the gating step that enforces soulbound semantics: only the issuer can
+ *   authorize new trustlines, so the badge cannot be transferred to a third party
+ *   (any receiving account would need a new issuer-authorized trustline).
+ * - Finally, the issuer sends 1 unit of the badge asset to the recipient.
+ *
  * @param issuerSecretKey Badge issuer's secret key
  * @param recipientPublicKey Recipient's public key
  * @param badgeAssetCode Asset code for the badge (max 12 chars)
- * @param memo Optional memo for the transaction
- * @returns transaction hash
+ * @param memo Optional memo for the transaction (truncated to 28 bytes)
+ * @returns transaction hash of the payment (final) transaction
  * @throws StellarError
  */
 export async function issueSoulboundBadge(
@@ -227,63 +279,59 @@ export async function issueSoulboundBadge(
   try {
     const issuerKeypair = Keypair.fromSecret(issuerSecretKey);
     const issuerPublicKey = issuerKeypair.publicKey();
-
-    // Create the badge asset
     const badgeAsset = new Asset(badgeAssetCode, issuerPublicKey);
+    const baseFee = (await server.fetchBaseFee()).toString();
+    const safeMemo = sanitizeStellarTextMemo(memo);
 
-    // Load recipient account
-    const recipientAccount = await server.loadAccount(recipientPublicKey);
+    // Step 1 (trustline creation) is performed client-side: the caller must use
+    // prepareBadgeTrustlineXdr(), have the recipient sign the returned XDR via
+    // WalletConnect, and submit it to Stellar before calling this function.
 
-    // Build transaction to establish trustline and send badge
-    const transaction = new TransactionBuilder(recipientAccount, {
-      fee: (await server.fetchBaseFee()).toString(),
+    // Step 2: Issuer authorizes the recipient's trustline using setTrustLineFlags.
+    // AUTHORIZED_FLAG = 1  →  allows the trustline to hold the asset.
+    // This is the soulbound gate: without issuer authorization no third party
+    // can receive this asset, enforcing non-transferability at the protocol level.
+    const issuerAccountForAuth = await server.loadAccount(issuerPublicKey);
+    const authTx = new TransactionBuilder(issuerAccountForAuth, {
+      fee: baseFee,
       networkPassphrase: STELLAR_NETWORK,
     })
       .addOperation(
-        Operation.changeTrust({
+        Operation.setTrustLineFlags({
+          trustor: recipientPublicKey,
           asset: badgeAsset,
-          limit: "1", // Only allow 1 badge
-          source: recipientPublicKey,
+          flags: {
+            authorized: true,
+            authorizedToMaintainLiabilities: false,
+          },
         }),
       )
-      .setTimeout(30);
+      .setTimeout(30)
+      .build();
 
-    if (memo) {
-      transaction.addMemo(Memo.text(memo));
-    }
+    authTx.sign(issuerKeypair);
+    await server.submitTransaction(authTx);
 
-    const builtTx = transaction.build();
-
-    // Sign with issuer (to authorize the trustline)
-    builtTx.sign(issuerKeypair);
-
-    // Submit the trustline transaction
-    await server.submitTransaction(builtTx);
-
-    // Now send the badge from issuer to recipient
-    const issuerAccount = await server.loadAccount(issuerPublicKey);
-
-    const paymentTx = new TransactionBuilder(issuerAccount, {
-      fee: (await server.fetchBaseFee()).toString(),
+    // Step 3: Issuer sends 1 unit of the badge asset to the recipient.
+    const issuerAccountForPayment = await server.loadAccount(issuerPublicKey);
+    const paymentTxBuilder = new TransactionBuilder(issuerAccountForPayment, {
+      fee: baseFee,
       networkPassphrase: STELLAR_NETWORK,
-    })
-      .addOperation(
-        Operation.payment({
-          destination: recipientPublicKey,
-          asset: badgeAsset,
-          amount: "1",
-        }),
-      )
-      .setTimeout(30);
+    }).addOperation(
+      Operation.payment({
+        destination: recipientPublicKey,
+        asset: badgeAsset,
+        amount: "1",
+      }),
+    ).setTimeout(30);
 
-    if (memo) {
-      paymentTx.addMemo(Memo.text(memo));
+    if (safeMemo) {
+      paymentTxBuilder.addMemo(Memo.text(safeMemo));
     }
 
-    const paymentTransaction = paymentTx.build();
-    paymentTransaction.sign(issuerKeypair);
-
-    const result = await server.submitTransaction(paymentTransaction);
+    const paymentTx = paymentTxBuilder.build();
+    paymentTx.sign(issuerKeypair);
+    const result = await server.submitTransaction(paymentTx);
 
     return result.hash;
   } catch (err: unknown) {
@@ -305,8 +353,78 @@ export async function issueSoulboundBadge(
 }
 
 /**
- * Configure a Stellar account as a badge issuer with proper flags for soulbound tokens
- * Sets AUTH_REQUIRED, AUTH_REVOCABLE, and AUTH_CLAWBACK_ENABLED flags
+ * Query all soulbound badges held by a Stellar wallet address.
+ * Returns badge assets in a format compatible with external Stellar wallets
+ * (Lobstr, Solar, etc.) that display custom assets from the account's balances.
+ *
+ * @param walletAddress Stellar public key to query
+ * @param issuerPublicKey Badge issuer public key (to filter only LancePay badges)
+ * @returns Array of badge asset entries visible to external wallets
+ */
+export async function getWalletBadges(
+  walletAddress: string,
+  issuerPublicKey: string,
+): Promise<
+  {
+    assetCode: string;
+    issuer: string;
+    balance: string;
+    limit: string;
+    authorized: boolean;
+  }[]
+> {
+  if (!isValidStellarAddress(walletAddress)) {
+    throw {
+      type: "invalid_address",
+      message: "Invalid wallet Stellar address.",
+    } as StellarError;
+  }
+
+  try {
+    const account = await server.loadAccount(walletAddress);
+
+    return account.balances
+      .filter(
+        (b: any) =>
+          b.asset_type !== "native" &&
+          b.asset_issuer === issuerPublicKey &&
+          parseFloat(b.balance) > 0,
+      )
+      .map((b: any) => ({
+        assetCode: b.asset_code,
+        issuer: b.asset_issuer,
+        balance: b.balance,
+        limit: b.limit,
+        // is_authorized reflects whether the issuer has granted the trustline —
+        // for soulbound badges this will always be true for legitimately issued badges.
+        authorized: b.is_authorized === true,
+      }));
+  } catch (error) {
+    console.error("Error fetching wallet badges:", error);
+    throw {
+      type: "network_error",
+      message: "Failed to fetch wallet badges.",
+    } as StellarError;
+  }
+}
+
+/**
+ * Configure a Stellar account as a badge issuer with the flags required for soulbound tokens.
+ *
+ * Required flags (Stellar AuthFlag):
+ *  - AUTH_REQUIRED      : Trustlines to this issuer start unauthorized; issuer must
+ *                         explicitly call setTrustLineFlags to allow each recipient.
+ *                         This is the key soulbound enforcement: a badge cannot be
+ *                         transferred to a new wallet because any new trustline would
+ *                         start unauthorized and the issuer would never approve it.
+ *  - AUTH_REVOCABLE     : Issuer can deauthorize (revoke) a trustline at any time,
+ *                         enabling badge revocation if needed (e.g., misconduct).
+ *  - AUTH_CLAWBACK_ENABLED: Issuer can clawback the asset from any holder, providing
+ *                         a last-resort recovery mechanism.
+ *
+ * This function must be called once when setting up the badge issuer account,
+ * before any badges are issued.
+ *
  * @param issuerSecretKey Issuer account secret key
  * @returns transaction hash
  * @throws StellarError
@@ -324,7 +442,10 @@ export async function configureBadgeIssuer(
     })
       .addOperation(
         Operation.setOptions({
-          setFlags: (1 | 2 | 4) as any,
+          setFlags:
+            AuthFlag.AuthRequired |
+            AuthFlag.AuthRevocable |
+            AuthFlag.AuthClawbackEnabled,
         }),
       )
       .setTimeout(30)

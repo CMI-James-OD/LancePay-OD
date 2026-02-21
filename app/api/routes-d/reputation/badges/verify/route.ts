@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { hasBadge } from "@/lib/stellar";
+import { hasBadge, getWalletBadges } from "@/lib/stellar";
 import { Keypair } from "@stellar/stellar-sdk";
 
 /**
@@ -84,6 +84,15 @@ export async function GET(request: NextRequest) {
       issuerPublicKey,
     );
 
+    // Fetch all LancePay badges visible in the wallet so external wallets
+    // (Lobstr, Solar, etc.) can surface the same on-chain data.
+    let walletBadges: Awaited<ReturnType<typeof getWalletBadges>> = [];
+    try {
+      walletBadges = await getWalletBadges(wallet.address, issuerPublicKey);
+    } catch {
+      // Non-fatal: on-chain badge list is supplemental to DB verification.
+    }
+
     return NextResponse.json({
       verified: hasOnChainBadge,
       badge: {
@@ -102,6 +111,9 @@ export async function GET(request: NextRequest) {
       stellarTxHash: userBadge.stellarTxHash,
       walletAddress: wallet.address,
       issuerPublicKey,
+      // All LancePay soulbound badges visible in the wallet at query time.
+      // External wallets display these as standard Stellar custom assets.
+      walletBadges,
     });
   } catch (error) {
     console.error("Badge verification error:", error);
