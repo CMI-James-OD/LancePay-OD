@@ -97,6 +97,14 @@ export async function checkAdvanceEligibility(
     return { eligible: false, reason: 'User not found' }
   }
 
+  // Validate requested amount
+  if (requestedAmount <= 0) {
+    return {
+      eligible: false,
+      reason: 'Requested amount must be greater than zero',
+    }
+  }
+
   // Check if invoice exists and belongs to user
   const invoice = user.invoices[0]
   if (!invoice) {
