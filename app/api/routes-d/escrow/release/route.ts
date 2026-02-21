@@ -34,14 +34,22 @@ export async function POST(request: NextRequest) {
 
     const now = new Date()
     const updated = await prisma.$transaction(async (tx: any) => {
-      const inv = await tx.invoice.update({
-        where: { id: invoice.id },
+      const updateResult = await tx.invoice.updateMany({
+        where: {
+          id: invoice.id,
+          escrowEnabled: true,
+          escrowStatus: 'held',
+          clientEmail: invoice.clientEmail,
+        },
         data: {
           escrowStatus: 'released',
           escrowReleasedAt: now,
         },
-        select: { id: true, escrowStatus: true, escrowReleasedAt: true },
       })
+
+      if (updateResult.count !== 1) {
+        throw new Error('ESCROW_RELEASE_CONFLICT')
+      }
 
       await tx.escrowEvent.create({
         data: {
@@ -53,8 +61,15 @@ export async function POST(request: NextRequest) {
         },
       })
 
-      return inv
+      return tx.invoice.findUnique({
+        where: { id: invoice.id },
+        select: { id: true, escrowStatus: true, escrowReleasedAt: true },
+      })
     })
+
+    if (!updated) {
+      return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
+    }
 
     if (invoice.user.email) {
       await sendEscrowReleasedEmail({
@@ -75,6 +90,9 @@ export async function POST(request: NextRequest) {
       },
     })
   } catch (error) {
+    if (error instanceof Error && error.message === 'ESCROW_RELEASE_CONFLICT') {
+      return NextResponse.json({ error: 'Escrow status changed. Please refresh and retry.' }, { status: 409 })
+    }
     console.error('Escrow release error:', error)
     return NextResponse.json({ error: 'Failed to release escrow' }, { status: 500 })
   }
