@@ -147,8 +147,8 @@ export async function getRecentReferralHistory(
 
 function maskEmail(email: string): string {
   const [local, domain] = email.split("@");
-  if (local.length <= 2) {
-    return `${local[0]}***@${domain}`;
+  if (local.length <= 1) {
+    return `*@${domain}`;
   }
   return `${local[0]}***@${domain}`;
 }

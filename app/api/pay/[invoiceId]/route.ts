@@ -1,28 +1,39 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
-import { createReferralEarning } from '@/lib/referral'
-import { dispatchWebhooks } from '@/lib/webhooks'
-import { updateUserTrustScore } from '@/lib/reputation'
-import { logAuditEvent, extractRequestMetadata } from '@/lib/audit'
-import { processSavingsOnPayment } from '@/lib/savings'
-import { processWaterfallPayments } from '@/lib/waterfall'
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
+import { createReferralEarning } from "@/lib/referral";
+import { dispatchWebhooks } from "@/lib/webhooks";
+import { updateUserTrustScore } from "@/lib/reputation";
+import { logAuditEvent, extractRequestMetadata } from "@/lib/audit";
+import { processSavingsOnPayment } from "@/lib/savings";
+import { processWaterfallPayments } from "@/lib/waterfall";
 
-export async function GET(request: NextRequest, { params }: { params: Promise<{ invoiceId: string }> }) {
-  const { invoiceId } = await params
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ invoiceId: string }> },
+) {
+  const { invoiceId } = await params;
   const invoice = await prisma.invoice.findUnique({
     where: { invoiceNumber: invoiceId },
-    include: { user: { select: { name: true, wallet: { select: { address: true } } } } },
-  })
+    include: {
+      user: { select: { name: true, wallet: { select: { address: true } } } },
+    },
+  });
 
-  if (!invoice) return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
+  if (!invoice)
+    return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
 
   // Log audit event for invoice view (async, non-blocking)
-  logAuditEvent(invoice.id, 'invoice.viewed', null, extractRequestMetadata(request.headers)).catch((error) => {
-    console.error('Failed to log invoice.viewed audit event:', error)
-  })
+  logAuditEvent(
+    invoice.id,
+    "invoice.viewed",
+    null,
+    extractRequestMetadata(request.headers),
+  ).catch((error) => {
+    console.error("Failed to log invoice.viewed audit event:", error);
+  });
 
   // Dispatch webhook for invoice.viewed event (async, non-blocking)
-  dispatchWebhooks(invoice.userId, 'invoice.viewed', {
+  dispatchWebhooks(invoice.userId, "invoice.viewed", {
     invoiceId: invoice.id,
     invoiceNumber: invoice.invoiceNumber,
     amount: Number(invoice.amount),
@@ -30,100 +41,120 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     clientEmail: invoice.clientEmail,
     viewedAt: new Date().toISOString(),
   }).catch((error) => {
-    console.error('Failed to dispatch invoice.viewed webhook:', error)
-  })
+    console.error("Failed to dispatch invoice.viewed webhook:", error);
+  });
 
   return NextResponse.json({
     invoiceNumber: invoice.invoiceNumber,
-    freelancerName: invoice.user.name || 'Freelancer',
+    freelancerName: invoice.user.name || "Freelancer",
     description: invoice.description,
     amount: Number(invoice.amount),
     status: invoice.status,
     dueDate: invoice.dueDate,
     walletAddress: invoice.user.wallet?.address,
-  })
+  });
 }
 
-export async function POST(request: NextRequest, { params }: { params: Promise<{ invoiceId: string }> }) {
-  const { invoiceId } = await params
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ invoiceId: string }> },
+) {
+  const { invoiceId } = await params;
   const invoice = await prisma.invoice.findUnique({
     where: { invoiceNumber: invoiceId },
     include: {
       user: {
         select: {
           id: true,
-          referredById: true
-        }
-      }
-    }
-  })
+          referredById: true,
+        },
+      },
+    },
+  });
 
-  if (!invoice || invoice.status !== 'pending') {
-    return NextResponse.json({ error: 'Invalid invoice' }, { status: 400 })
+  if (!invoice || invoice.status !== "pending") {
+    return NextResponse.json({ error: "Invalid invoice" }, { status: 400 });
   }
 
   // Update invoice and create transaction in a single transaction
   const updatedInvoice = await prisma.$transaction(async (tx: any) => {
     await tx.invoice.update({
       where: { id: invoice.id },
-      data: { status: 'paid', paidAt: new Date() }
-    })
+      data: { status: "paid", paidAt: new Date() },
+    });
 
     await tx.transaction.create({
       data: {
         userId: invoice.userId,
-        type: 'incoming',
-        status: 'completed',
+        type: "incoming",
+        status: "completed",
         amount: invoice.amount,
         currency: invoice.currency,
         invoiceId: invoice.id,
-        completedAt: new Date()
-      }
-    })
+        completedAt: new Date(),
+      },
+    });
+
+    // Log audit event for payment within transaction
+    await logAuditEvent(
+      invoice.id,
+      "invoice.paid",
+      null,
+      extractRequestMetadata(request.headers),
+      tx,
+    );
 
     // Return the updated invoice with user data
     return tx.invoice.findUnique({
       where: { id: invoice.id },
-      include: { user: true }
-    })
-  })
+      include: { user: true },
+    });
+  });
 
   if (!updatedInvoice) {
-    return NextResponse.json({ error: 'Failed to update invoice' }, { status: 500 })
+    return NextResponse.json(
+      { error: "Failed to update invoice" },
+      { status: 500 },
+    );
   }
-
-  // Log audit event for payment
-  await logAuditEvent(invoice.id, 'invoice.paid', null, extractRequestMetadata(request.headers))
 
   if (invoice.user.referredById) {
     await createReferralEarning({
       referrerId: invoice.user.referredById,
       referredUserId: invoice.user.id,
       invoiceId: invoice.id,
-      invoiceAmount: Number(invoice.amount)
-    })
+      invoiceAmount: Number(invoice.amount),
+    });
   }
 
   // Process savings goals auto-deduction
-  await processSavingsOnPayment(updatedInvoice.userId, Number(updatedInvoice.amount))
+  await processSavingsOnPayment(
+    updatedInvoice.userId,
+    Number(updatedInvoice.amount),
+  );
 
   // Process waterfall payments to sub-contractors
-  const waterfallResult = await processWaterfallPayments(updatedInvoice.id, Number(updatedInvoice.amount))
+  const waterfallResult = await processWaterfallPayments(
+    updatedInvoice.id,
+    Number(updatedInvoice.amount),
+  );
   if (waterfallResult.processed) {
-    console.log(`Waterfall payments processed: ${waterfallResult.distributions.length} distributions, lead share: ${waterfallResult.leadShare}`)
+    console.log(
+      `Waterfall payments processed: ${waterfallResult.distributions.length} distributions, lead share: ${waterfallResult.leadShare}`,
+    );
   }
 
   // Process auto-swap
-  const { processAutoSwap } = await import('@/lib/auto-swap')
+  const { processAutoSwap } = await import("@/lib/auto-swap");
   await processAutoSwap(
     updatedInvoice.userId,
     Number(updatedInvoice.amount),
     updatedInvoice.user.email,
-    updatedInvoice.user.name || undefined
-  )
+    updatedInvoice.user.name || undefined,
+  );
 
   // Dispatch webhook for invoice.paid event
-  await dispatchWebhooks(updatedInvoice.userId, 'invoice.paid', {
+  await dispatchWebhooks(updatedInvoice.userId, "invoice.paid", {
     invoiceId: updatedInvoice.id,
     invoiceNumber: updatedInvoice.invoiceNumber,
     amount: Number(updatedInvoice.amount),
@@ -131,15 +162,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     clientEmail: updatedInvoice.clientEmail,
     clientName: updatedInvoice.clientName,
     paidAt: new Date().toISOString(),
-  })
+  });
 
   // Update trust score (synchronous as per requirements)
   try {
-    await updateUserTrustScore(updatedInvoice.userId)
+    await updateUserTrustScore(updatedInvoice.userId);
   } catch (error) {
-    console.error('Failed to update trust score after payment:', error)
+    console.error("Failed to update trust score after payment:", error);
     // Don't fail the payment if score update fails
   }
 
-  return NextResponse.json({ success: true })
+  return NextResponse.json({ success: true });
 }
