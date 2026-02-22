@@ -17,26 +17,33 @@ export function BadgeMetadataCard({
   const [isLocked, setIsLocked] = useState(false);
 
   useEffect(() => {
-    fetchMetadata();
-  }, [issuerAddress, assetCode]);
+    const controller = new AbortController();
 
-  const fetchMetadata = async () => {
-    try {
-      const response = await fetch(
-        `/api/routes-d/badges/metadata?issuer=${issuerAddress}&code=${assetCode}`
-      );
+    const fetchMetadata = async () => {
+      try {
+        const response = await fetch(
+          `/api/routes-d/badges/metadata?issuer=${issuerAddress}&code=${assetCode}`,
+          { signal: controller.signal }
+        );
 
-      if (response.ok) {
-        const data = await response.json();
-        setMetadata(data.metadata);
-        setIsLocked(data.isLocked);
+        if (response.ok) {
+          const data = await response.json();
+          setMetadata(data.metadata);
+          setIsLocked(data.isLocked);
+        }
+      } catch (error) {
+        if ((error as Error).name !== "AbortError") {
+          console.error("Failed to fetch metadata:", error);
+        }
+      } finally {
+        setLoading(false);
       }
-    } catch (error) {
-      console.error("Failed to fetch metadata:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
+
+    fetchMetadata();
+
+    return () => controller.abort();
+  }, [issuerAddress, assetCode]);
 
   if (loading) {
     return <div className="animate-pulse bg-gray-200 h-48 rounded-lg"></div>;

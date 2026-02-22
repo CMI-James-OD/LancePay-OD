@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
 
     const { user } = authResult
 
-    // Get the user's auto-swap rule with bank account details
+    
     const rule = await prisma.autoSwapRule.findUnique({
       where: { userId: user.id },
       include: { 

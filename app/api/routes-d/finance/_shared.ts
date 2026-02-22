@@ -1,13 +1,13 @@
 import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
+import { PLATFORM_FEE_RATE, WITHDRAWAL_FEE_RATE } from '@/lib/fee-rates'
+
+export { PLATFORM_FEE_RATE, WITHDRAWAL_FEE_RATE }
 
 /**
  * Finance module shared utilities
- * Fee rate constants (aligned with tax-reports module)
  */
-export const PLATFORM_FEE_RATE = 0.005 // 0.5%
-export const WITHDRAWAL_FEE_RATE = 0.005 // 0.5%
 
 /**
  * Supported period types for P&L reports

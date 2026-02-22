@@ -1,9 +1,9 @@
 import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getOrCreateUserFromRequest } from '@/app/api/routes-d/bulk-invoices/_shared'
+import { PLATFORM_FEE_RATE, WITHDRAWAL_FEE_RATE } from '@/lib/fee-rates'
 
-export const PLATFORM_FEE_RATE = 0.005 // 0.5%
-export const WITHDRAWAL_FEE_RATE = 0.005 // 0.5%
+export { PLATFORM_FEE_RATE, WITHDRAWAL_FEE_RATE }
 
 export function getYearBounds(year: number) {
   const start = new Date(Date.UTC(year, 0, 1, 0, 0, 0))

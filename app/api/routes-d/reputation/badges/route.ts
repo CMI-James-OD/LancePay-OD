@@ -71,11 +71,20 @@ export async function POST(request: NextRequest) {
     const user = await getOrCreateUser(claims);
 
     const body = await request.json();
-    const { badgeId } = body;
+    const { badgeId, trustlineSubmitted } = body;
 
     if (!badgeId) {
       return NextResponse.json(
         { error: "badgeId is required" },
+        { status: 400 },
+      );
+    }
+
+    if (!trustlineSubmitted) {
+      return NextResponse.json(
+        {
+          error: "Trustline must be created first. Call POST /api/routes-d/reputation/badges/prepare-trustline to get the unsigned XDR, sign it with your wallet, submit it to Stellar, then retry with trustlineSubmitted: true.",
+        },
         { status: 400 },
       );
     }

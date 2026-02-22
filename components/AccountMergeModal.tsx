@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { canMergeAccount, calculateRecoverableXLM } from "@/lib/account-merge";
 
 interface AccountMergeModalProps {
@@ -20,17 +20,25 @@ export function AccountMergeModal({
   const [issues, setIssues] = useState<string[]>([]);
   const [recoverableXLM, setRecoverableXLM] = useState("0");
 
-  useState(() => {
-    checkMergeEligibility();
-  });
+  useEffect(() => {
+    const controller = new AbortController();
 
-  const checkMergeEligibility = async () => {
-    const result = await canMergeAccount(publicKey);
-    const xlm = await calculateRecoverableXLM(publicKey);
-    setCanMerge(result.canMerge);
-    setIssues(result.issues);
-    setRecoverableXLM(xlm);
-  };
+    const run = async () => {
+      const result = await canMergeAccount(publicKey);
+      if (controller.signal.aborted) return;
+      setCanMerge(result.canMerge);
+      setIssues(result.issues);
+
+      if (result.canMerge) {
+        const xlm = await calculateRecoverableXLM(publicKey);
+        if (controller.signal.aborted) return;
+        setRecoverableXLM(xlm);
+      }
+    };
+
+    run();
+    return () => controller.abort();
+  }, [publicKey]);
 
   const handleConfirm = async () => {
     if (!canMerge) return;

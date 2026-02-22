@@ -1,59 +1,59 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
-import { verifyAuthToken } from '@/lib/auth'
-import { getUsdToNgnRate } from '@/lib/exchange-rate'
-import { sendUSDCPayment } from '@/lib/stellar'
-import { Keypair } from '@stellar/stellar-sdk'
-import { logAuditEvent, extractRequestMetadata } from '@/lib/audit'
-import { z } from 'zod'
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
+import { verifyAuthToken } from "@/lib/auth";
+import { getUsdToNgnRate } from "@/lib/exchange-rate";
+import { sendUSDCPayment } from "@/lib/stellar";
+import { Keypair } from "@stellar/stellar-sdk";
+import { logAuditEvent, extractRequestMetadata } from "@/lib/audit";
+import { z } from "zod";
 
 const VerifyPaymentSchema = z.object({
   paymentId: z.string().uuid(),
-  action: z.enum(['confirm', 'reject']),
+  action: z.enum(["confirm", "reject"]),
   notes: z.string().max(500).optional(),
-})
+});
 
 export async function PATCH(request: NextRequest) {
   try {
     // Auth check
     const authToken = request.headers
-      .get('authorization')
-      ?.replace('Bearer ', '')
+      .get("authorization")
+      ?.replace("Bearer ", "");
     if (!authToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const claims = await verifyAuthToken(authToken)
+    const claims = await verifyAuthToken(authToken);
     if (!claims) {
-      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+      return NextResponse.json({ error: "Invalid token" }, { status: 401 });
     }
 
     // Get user
     let user = await prisma.user.findUnique({
       where: { privyId: claims.userId },
       include: { wallet: true },
-    })
+    });
 
     if (!user) {
       const email =
-        (claims as { email?: string }).email || `${claims.userId}@privy.local`
+        (claims as { email?: string }).email || `${claims.userId}@privy.local`;
       user = await prisma.user.create({
         data: { privyId: claims.userId, email },
         include: { wallet: true },
-      })
+      });
     }
 
     // Parse request
-    const body = await request.json()
-    const parsed = VerifyPaymentSchema.safeParse(body)
+    const body = await request.json();
+    const parsed = VerifyPaymentSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json(
-        { error: parsed.error.issues[0]?.message || 'Invalid request' },
-        { status: 400 }
-      )
+        { error: parsed.error.issues[0]?.message || "Invalid request" },
+        { status: 400 },
+      );
     }
 
-    const { paymentId, action, notes } = parsed.data
+    const { paymentId, action, notes } = parsed.data;
 
     // Fetch manual payment with invoice
     const manualPayment = await prisma.manualPayment.findUnique({
@@ -72,56 +72,53 @@ export async function PATCH(request: NextRequest) {
           },
         },
       },
-    })
+    });
 
     if (!manualPayment) {
-      return NextResponse.json(
-        { error: 'Payment not found' },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: "Payment not found" }, { status: 404 });
     }
 
     // Ownership verification
     if (manualPayment.invoice.userId !== user.id) {
       return NextResponse.json(
-        { error: 'Forbidden: You do not own this invoice' },
-        { status: 403 }
-      )
+        { error: "Forbidden: You do not own this invoice" },
+        { status: 403 },
+      );
     }
 
     // Status check (idempotency)
-    if (manualPayment.status !== 'pending') {
+    if (manualPayment.status !== "pending") {
       return NextResponse.json(
         { error: `Payment already ${manualPayment.status}` },
-        { status: 409 }
-      )
+        { status: 409 },
+      );
     }
 
     // Invoice status check
-    if (manualPayment.invoice.status !== 'pending') {
+    if (manualPayment.invoice.status !== "pending") {
       return NextResponse.json(
         { error: `Invoice is already ${manualPayment.invoice.status}` },
-        { status: 400 }
-      )
+        { status: 400 },
+      );
     }
 
     // Handle REJECTION
-    if (action === 'reject') {
+    if (action === "reject") {
       await prisma.manualPayment.update({
         where: { id: paymentId },
         data: {
-          status: 'rejected',
+          status: "rejected",
           notes: notes || null,
           verifiedBy: user.id,
           verifiedAt: new Date(),
         },
-      })
+      });
 
       return NextResponse.json({
         success: true,
-        action: 'rejected',
-        message: 'Payment rejected',
-      })
+        action: "rejected",
+        message: "Payment rejected",
+      });
     }
 
     // Handle CONFIRMATION
@@ -129,142 +126,143 @@ export async function PATCH(request: NextRequest) {
     // Wallet check
     if (!manualPayment.invoice.user.wallet) {
       return NextResponse.json(
-        { error: 'Freelancer wallet not found' },
-        { status: 400 }
-      )
+        { error: "Freelancer wallet not found" },
+        { status: 400 },
+      );
     }
 
     // Get exchange rate (NGN → USD conversion)
-    const rateResult = await getUsdToNgnRate()
-    const exchangeRate = rateResult.rate
-    const ngnAmount = Number(manualPayment.amountPaid)
-    const usdcAmount = ngnAmount / exchangeRate
+    const rateResult = await getUsdToNgnRate();
+    const exchangeRate = rateResult.rate;
+    const ngnAmount = Number(manualPayment.amountPaid);
+    const usdcAmount = ngnAmount / exchangeRate;
 
     // Round to 2 decimal places for USDC
-    const usdcAmountRounded = Math.floor(usdcAmount * 100) / 100
+    const usdcAmountRounded = Math.floor(usdcAmount * 100) / 100;
 
     if (usdcAmountRounded <= 0) {
       return NextResponse.json(
-        { error: 'Converted USDC amount is too small' },
-        { status: 400 }
-      )
+        { error: "Converted USDC amount is too small" },
+        { status: 400 },
+      );
     }
 
     // Credit USDC via Stellar (using funding wallet)
-    const fundingWalletSecret = process.env.STELLAR_FUNDING_WALLET_SECRET
+    const fundingWalletSecret = process.env.STELLAR_FUNDING_WALLET_SECRET;
     if (!fundingWalletSecret) {
       return NextResponse.json(
-        { error: 'Funding wallet not configured' },
-        { status: 500 }
-      )
+        { error: "Funding wallet not configured" },
+        { status: 500 },
+      );
     }
 
-    const fundingKeypair = Keypair.fromSecret(fundingWalletSecret)
-    const fundingPublicKey = fundingKeypair.publicKey()
-    const recipientAddress = manualPayment.invoice.user.wallet.address
+    const fundingKeypair = Keypair.fromSecret(fundingWalletSecret);
+    const fundingPublicKey = fundingKeypair.publicKey();
+    const recipientAddress = manualPayment.invoice.user.wallet.address;
 
     // Execute Stellar transaction
-    let txHash: string
+    let txHash: string;
     try {
       txHash = await sendUSDCPayment(
         fundingPublicKey,
         fundingWalletSecret,
         recipientAddress,
-        usdcAmountRounded.toString()
-      )
+        usdcAmountRounded.toString(),
+      );
     } catch (stellarError: unknown) {
-      console.error('Stellar payment failed:', stellarError)
+      console.error("Stellar payment failed:", stellarError);
       return NextResponse.json(
         {
-          error: 'Failed to credit USDC to wallet',
+          error: "Failed to credit USDC to wallet",
           details:
             stellarError instanceof Error
               ? stellarError.message
-              : 'Unknown Stellar error',
+              : "Unknown Stellar error",
         },
-        { status: 500 }
-      )
+        { status: 500 },
+      );
     }
 
     // Database transaction: Update invoice, create transaction, update manual payment
-    const now = new Date()
+    const now = new Date();
 
-    await prisma.$transaction(async (tx: any) => {
+    const updatedInvoice = await prisma.$transaction(async (tx: any) => {
       // Update invoice
       await tx.invoice.update({
         where: { id: manualPayment.invoice.id },
         data: {
-          status: 'paid',
+          status: "paid",
           paidAt: now,
         },
-      })
+      });
 
       // Create transaction record
       await tx.transaction.create({
         data: {
           userId: manualPayment.invoice.userId,
-          type: 'incoming',
-          status: 'completed',
+          type: "incoming",
+          status: "completed",
           amount: usdcAmountRounded,
-          currency: 'USD',
+          currency: "USD",
           ngnAmount,
           exchangeRate,
           invoiceId: manualPayment.invoice.id,
           txHash,
           completedAt: now,
         },
-      })
+      });
 
       // Update manual payment
       await tx.manualPayment.update({
         where: { id: paymentId },
         data: {
-          status: 'verified',
+          status: "verified",
           notes: notes || null,
           verifiedBy: user.id,
           verifiedAt: now,
         },
-      })
-    })
+      });
 
-    // Fetch updated invoice for post-processing
-    const updatedInvoice = await prisma.invoice.findUnique({
-      where: { id: manualPayment.invoice.id },
-      include: { user: true },
-    })
+      // Log audit event within transaction
+      await logAuditEvent(
+        manualPayment.invoice.id,
+        "invoice.paid.manual",
+        user.id,
+        {
+          ...extractRequestMetadata(request.headers),
+          paymentMethod: "manual_bank_transfer",
+          ngnAmount,
+          usdcAmount: usdcAmountRounded,
+          exchangeRate,
+          txHash,
+        },
+        tx,
+      );
 
-    if (!updatedInvoice) throw new Error('Invoice not found after update')
+      // Return the updated invoice with user data
+      return tx.invoice.findUnique({
+        where: { id: manualPayment.invoice.id },
+        include: { user: true },
+      });
+    });
 
-    // Log audit event
-    await logAuditEvent(
-      updatedInvoice.id,
-      'invoice.paid.manual',
-      user.id,
-      {
-        ...extractRequestMetadata(request.headers),
-        paymentMethod: 'manual_bank_transfer',
-        ngnAmount,
-        usdcAmount: usdcAmountRounded,
-        exchangeRate,
-        txHash,
-      }
-    ).catch((err) => console.error('Audit log failed:', err))
+    if (!updatedInvoice) throw new Error("Invoice not found after update");
 
     // Send confirmation email to client
     if (updatedInvoice.clientEmail) {
-      const { sendManualPaymentVerifiedEmail } = await import('@/lib/email')
+      const { sendManualPaymentVerifiedEmail } = await import("@/lib/email");
       await sendManualPaymentVerifiedEmail({
         to: updatedInvoice.clientEmail,
-        clientName: manualPayment.invoice.clientName || 'Valued Client',
+        clientName: manualPayment.invoice.clientName || "Valued Client",
         invoiceNumber: updatedInvoice.invoiceNumber,
         amountPaid: ngnAmount,
         currency: manualPayment.currency,
-      }).catch((err) => console.error('Email notification failed:', err))
+      }).catch((err) => console.error("Email notification failed:", err));
     }
 
     return NextResponse.json({
       success: true,
-      action: 'confirmed',
+      action: "confirmed",
       transaction: {
         txHash,
         usdcAmount: usdcAmountRounded,
@@ -276,12 +274,12 @@ export async function PATCH(request: NextRequest) {
         invoiceNumber: updatedInvoice.invoiceNumber,
         status: updatedInvoice.status,
       },
-    })
+    });
   } catch (error) {
-    console.error('Manual payment verification error:', error)
+    console.error("Manual payment verification error:", error);
     return NextResponse.json(
-      { error: 'Failed to verify payment' },
-      { status: 500 }
-    )
+      { error: "Failed to verify payment" },
+      { status: 500 },
+    );
   }
 }
