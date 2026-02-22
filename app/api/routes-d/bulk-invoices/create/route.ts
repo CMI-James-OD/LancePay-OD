@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import {
   BulkInvoiceSchema,
+  MAX_BULK_INVOICES,
   enforceBulkRateLimit,
   getOrCreateUserFromRequest,
   processBulkInvoices,
@@ -18,7 +19,7 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
     const shape = z.object({
-      invoices: z.array(z.unknown()).min(1, 'invoices must not be empty').max(100, 'Max 100 invoices per request'),
+      invoices: z.array(z.unknown()).min(1, 'invoices must not be empty').max(MAX_BULK_INVOICES, `Max ${MAX_BULK_INVOICES} invoices per request`),
       sendEmails: z.boolean().optional().default(false),
     })
     const parsedBody = shape.safeParse(body)

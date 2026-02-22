@@ -56,8 +56,10 @@ export const BulkInvoiceSchema = z.object({
   sendEmail: z.boolean().optional().default(false),
 })
 
+export const MAX_BULK_INVOICES = 100
+
 export const BulkInvoicesRequestSchema = z.object({
-  invoices: z.array(BulkInvoiceSchema).min(1, 'invoices must not be empty').max(100, 'Max 100 invoices per request'),
+  invoices: z.array(BulkInvoiceSchema).min(1, 'invoices must not be empty').max(MAX_BULK_INVOICES, `Max ${MAX_BULK_INVOICES} invoices per request`),
   sendEmails: z.boolean().optional().default(false),
 })
 
@@ -113,6 +115,11 @@ export async function processBulkInvoices(params: {
 }) {
   const { request, userId, items, totalCount, sendEmailsByDefault } = params
   const preResults = params.preResults ?? []
+
+  // Hard cap — enforce regardless of what the calling route validated
+  if (totalCount > MAX_BULK_INVOICES) {
+    throw new Error(`Bulk invoice limit exceeded: max ${MAX_BULK_INVOICES} per request`)
+  }
 
   const job = await prisma.bulkInvoiceJob.create({
     data: {

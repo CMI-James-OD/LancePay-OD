@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import {
+  MAX_BULK_INVOICES,
   enforceBulkRateLimit,
   getOrCreateUserFromRequest,
   parseBooleanLike,
@@ -37,8 +38,8 @@ export async function POST(request: NextRequest) {
     const parsedCsv = parseCsvToInvoices(csvText)
     if ('error' in parsedCsv) return NextResponse.json({ error: parsedCsv.error }, { status: 400 })
 
-    if (parsedCsv.totalCount > 100) {
-      return NextResponse.json({ error: 'Max 100 invoices per request' }, { status: 429 })
+    if (parsedCsv.totalCount > MAX_BULK_INVOICES) {
+      return NextResponse.json({ error: `Max ${MAX_BULK_INVOICES} invoices per request` }, { status: 429 })
     }
 
     const sendEmails = parseBooleanLike(sendEmailsRaw) ?? false

@@ -27,16 +27,34 @@ function isValidBankCode(bankCode: string): boolean {
   return /^\d{3}$/.test(bankCode);
 }
 
-// Helper function to calculate estimated gas fees for Stellar transactions
-async function calculateEstimatedGasFees(itemCount: number): Promise<number> {
-  // Base fee per transaction (in XLM), typically 0.00001 XLM per operation
-  // We'll estimate 0.0001 XLM per transaction as a safe upper bound
-  // Convert to USDC (assuming 1 XLM ≈ 0.1 USDC for estimation)
-  const baseFeeXLM = 0.0001;
-  const estimatedXLM = baseFeeXLM * itemCount;
-  const estimatedUSDC = estimatedXLM * 0.1; // Conservative conversion rate
+// Platform fee rate (0.5%) applied on every payout
+const PLATFORM_FEE_RATE = 0.005;
 
-  return estimatedUSDC;
+// Flat Yellow Card bank transfer fee per BANK item (USDC equivalent)
+const BANK_TRANSFER_FEE_USDC = 0.3;
+
+// Calculate total estimated fees accounting for platform fees and bank transfer fees
+function calculateEstimatedFees(items: MassPayoutItem[]): number {
+  let total = 0;
+
+  for (const item of items) {
+    const amount = parseFloat(item.amount);
+
+    // Platform fee (0.5%) on every payout
+    const platformFee = amount * PLATFORM_FEE_RATE;
+
+    // Stellar gas fee per transaction (conservative USDC estimate)
+    const gasFeeUSDC = 0.001;
+
+    if (item.type === 'BANK') {
+      // BANK payouts incur Yellow Card withdrawal fee on top
+      total += platformFee + gasFeeUSDC + BANK_TRANSFER_FEE_USDC;
+    } else {
+      total += platformFee + gasFeeUSDC;
+    }
+  }
+
+  return parseFloat(total.toFixed(7));
 }
 
 async function processPayoutItem(
@@ -204,8 +222,8 @@ export async function POST(request: NextRequest) {
     const usdcBalance = balances.find((b: any) => b.asset_code === 'USDC' && b.asset_issuer === process.env.NEXT_PUBLIC_USDC_ISSUER);
     const userBalanceUSDC = usdcBalance ? parseFloat(usdcBalance.balance) : 0;
 
-    // Calculate estimated gas fees
-    const estimatedGasFees = await calculateEstimatedGasFees(body.items.length);
+    // Calculate estimated fees (gas + platform fee + bank transfer fees where applicable)
+    const estimatedGasFees = calculateEstimatedFees(body.items);
     const totalRequired = totalAmount + estimatedGasFees;
 
     // Check if user has sufficient balance
