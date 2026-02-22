@@ -1,41 +1,41 @@
-'use client';
+"use client";
 
-import React from 'react';
-import { motion, HTMLMotionProps } from 'framer-motion';
+import React from "react";
+import { motion, HTMLMotionProps } from "framer-motion";
 
-interface ButtonProps {
-  variant?: 'primary' | 'outline' | 'ghost';
-  size?: 'sm' | 'md' | 'lg';
-  children: React.ReactNode;
+interface ButtonProps extends HTMLMotionProps<"button"> {
+  variant?: "primary" | "outline" | "ghost";
+  size?: "sm" | "md" | "lg";
   fullWidth?: boolean;
   className?: string;
-  disabled?: boolean;
-  onClick?: () => void;
-  type?: 'button' | 'submit' | 'reset';
+  "aria-label"?: string;
 }
 
 export function Button({
-  variant = 'primary',
-  size = 'md',
+  variant = "primary",
+  size = "md",
   children,
-  className = '',
+  className = "",
   fullWidth = false,
-  disabled,
-  onClick,
-  type = 'button',
+  "aria-label": ariaLabel,
+  ...props
 }: ButtonProps) {
-  const baseStyles = 'inline-flex items-center justify-center rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-black disabled:opacity-50 disabled:pointer-events-none';
-  
+  const baseStyles =
+    "inline-flex items-center justify-center rounded-lg font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-brand-black disabled:opacity-50 disabled:pointer-events-none";
+
   const variants = {
-    primary: 'bg-brand-black text-white hover:bg-gray-900 border border-transparent',
-    outline: 'bg-white text-brand-black border border-brand-border hover:border-brand-black',
-    ghost: 'bg-transparent text-brand-gray hover:text-brand-black hover:bg-brand-light'
+    primary:
+      "bg-brand-black text-white hover:bg-gray-900 border border-transparent",
+    outline:
+      "bg-white text-brand-black border border-brand-border hover:border-brand-black",
+    ghost:
+      "bg-transparent text-gray-600 hover:text-brand-black hover:bg-brand-light",
   };
-  
+
   const sizes = {
-    sm: 'h-9 px-4 text-sm',
-    md: 'h-11 px-6 text-base',
-    lg: 'h-14 px-8 text-lg'
+    sm: "h-9 px-4 text-sm",
+    md: "h-11 px-6 text-base",
+    lg: "h-14 px-8 text-lg",
   };
 
   return (
@@ -46,15 +46,13 @@ export function Button({
         ${baseStyles} 
         ${variants[variant]} 
         ${sizes[size]} 
-        ${fullWidth ? 'w-full' : ''} 
+        ${fullWidth ? "w-full" : ""} 
         ${className}
       `}
-      disabled={disabled}
-      onClick={onClick}
-      type={type}
+      aria-label={ariaLabel}
+      {...props}
     >
       {children}
     </motion.button>
   );
 }
-
