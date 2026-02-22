@@ -1,4 +1,16 @@
-import { Horizon, Networks, Asset, Keypair, TransactionBuilder, Operation, StrKey, Transaction, Memo, AuthFlag, BASE_FEE } from "@stellar/stellar-sdk";
+import {
+  Horizon,
+  Networks,
+  Asset,
+  Keypair,
+  TransactionBuilder,
+  Operation,
+  StrKey,
+  Transaction,
+  Memo,
+  AuthFlag as StellarAuthFlag,
+  BASE_FEE,
+} from "@stellar/stellar-sdk";
 
 /**
  * Stellar Network Configuration
@@ -18,7 +30,8 @@ export const server = new Horizon.Server(HORIZON_URL);
  * USDC Asset
  * Fallback to testnet USDC issuer if not configured
  */
-const USDC_ISSUER = process.env.NEXT_PUBLIC_USDC_ISSUER ||
+const USDC_ISSUER =
+  process.env.NEXT_PUBLIC_USDC_ISSUER ||
   "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5"; // Testnet USDC issuer
 
 /**
@@ -62,7 +75,11 @@ export const USDC_ASSET = new Asset(
 );
 
 export interface AssetBalance {
-  asset_type: "native" | "credit_alphanum4" | "credit_alphanum12" | "liquidity_pool_shares";
+  asset_type:
+    | "native"
+    | "credit_alphanum4"
+    | "credit_alphanum12"
+    | "liquidity_pool_shares";
   asset_code?: string;
   asset_issuer?: string;
   balance: string;
@@ -86,12 +103,13 @@ export async function getAccountBalance(
     // Map Horizon response to our interface
     return account.balances.map((b: any) => ({
       asset_type: b.asset_type,
-      asset_code: b.asset_code || (b.asset_type === 'native' ? 'XLM' : undefined),
+      asset_code:
+        b.asset_code || (b.asset_type === "native" ? "XLM" : undefined),
       asset_issuer: b.asset_issuer,
       balance: b.balance,
       limit: b.limit,
       buying_liabilities: b.buying_liabilities,
-      selling_liabilities: b.selling_liabilities
+      selling_liabilities: b.selling_liabilities,
     }));
   } catch (error: unknown) {
     console.error("Error fetching account balance:", error);
@@ -229,12 +247,14 @@ export async function prepareBadgeTrustlineXdr(
   const txBuilder = new TransactionBuilder(recipientAccount, {
     fee: baseFee,
     networkPassphrase: STELLAR_NETWORK,
-  }).addOperation(
-    Operation.changeTrust({
-      asset: badgeAsset,
-      limit: "1",
-    }),
-  ).setTimeout(30);
+  })
+    .addOperation(
+      Operation.changeTrust({
+        asset: badgeAsset,
+        limit: "1",
+      }),
+    )
+    .setTimeout(30);
 
   if (safeMemo) {
     txBuilder.addMemo(Memo.text(safeMemo));
@@ -317,13 +337,15 @@ export async function issueSoulboundBadge(
     const paymentTxBuilder = new TransactionBuilder(issuerAccountForPayment, {
       fee: baseFee,
       networkPassphrase: STELLAR_NETWORK,
-    }).addOperation(
-      Operation.payment({
-        destination: recipientPublicKey,
-        asset: badgeAsset,
-        amount: "1",
-      }),
-    ).setTimeout(30);
+    })
+      .addOperation(
+        Operation.payment({
+          destination: recipientPublicKey,
+          asset: badgeAsset,
+          amount: "1",
+        }),
+      )
+      .setTimeout(30);
 
     if (safeMemo) {
       paymentTxBuilder.addMemo(Memo.text(safeMemo));
@@ -443,9 +465,9 @@ export async function configureBadgeIssuer(
       .addOperation(
         Operation.setOptions({
           setFlags:
-            AuthFlag.AuthRequired |
-            AuthFlag.AuthRevocable |
-            AuthFlag.AuthClawbackEnabled,
+            StellarAuthFlag.AuthRequired |
+            StellarAuthFlag.AuthRevocable |
+            StellarAuthFlag.AuthClawbackEnabled,
         }),
       )
       .setTimeout(30)
@@ -504,7 +526,7 @@ export async function hasBadge(
 export async function addTrustline(
   secretKey: string,
   assetCode: string,
-  assetIssuer: string
+  assetIssuer: string,
 ): Promise<string> {
   try {
     const keypair = Keypair.fromSecret(secretKey);
@@ -519,7 +541,7 @@ export async function addTrustline(
         Operation.changeTrust({
           asset,
           source: keypair.publicKey(),
-        })
+        }),
       )
       .setTimeout(30)
       .build();
@@ -546,7 +568,7 @@ export async function addTrustline(
 export async function removeTrustline(
   secretKey: string,
   assetCode: string,
-  assetIssuer: string
+  assetIssuer: string,
 ): Promise<string> {
   try {
     const keypair = Keypair.fromSecret(secretKey);
@@ -563,7 +585,7 @@ export async function removeTrustline(
           asset,
           limit: "0",
           source: keypair.publicKey(),
-        })
+        }),
       )
       .setTimeout(30)
       .build();
@@ -581,20 +603,20 @@ export async function removeTrustline(
 }
 
 export interface StellarTransaction {
-  transaction_hash: string
-  type: string
-  created_at: string
-  transaction_successful: boolean
-  from: string
-  to: string
-  amount?: string
-  asset_code?: string
-  asset_type?: string
-  memo?: string
+  transaction_hash: string;
+  type: string;
+  created_at: string;
+  transaction_successful: boolean;
+  from: string;
+  to: string;
+  amount?: string;
+  asset_code?: string;
+  asset_type?: string;
+  memo?: string;
 }
 
 /**
- * Fetch full transaction history for a potentially large account
+ * Fetch full transaction history for a potentially large account using cursor-based pagination.
  * @param publicKey Stellar account public key
  * @param startDate Optional start date filter
  * @param endDate Optional end date filter
@@ -603,41 +625,110 @@ export interface StellarTransaction {
 export async function fetchFullTransactionHistory(
   publicKey: string,
   startDate?: Date,
-  endDate?: Date
+  endDate?: Date,
 ): Promise<StellarTransaction[]> {
   try {
-    let response = await server.payments().forAccount(publicKey).order('desc').limit(50).call()
-    let records = response.records
-    let allRecords: any[] = [...records]
+    const allRecords: any[] = [];
+    let response = await server
+      .payments()
+      .forAccount(publicKey)
+      .order("desc")
+      .limit(100)
+      .call();
 
-    // Cursor-based pagination could be added here if needed for deeper history
-    // For now, 50-100 items is usually enough for export unless user is very active
+    while (response.records.length > 0) {
+      // Check if we've reached a record older than startDate
+      if (startDate) {
+        const oldestRecordDate = new Date(
+          response.records[response.records.length - 1].created_at,
+        );
+        if (oldestRecordDate < startDate) {
+          // Some records in current page might still be valid, filter below
+          allRecords.push(...response.records);
+          break;
+        }
+      }
 
-    const formatted = allRecords.map((r: any) => {
-      // payment specific fields
-      return {
-        transaction_hash: r.transaction_hash,
-        type: r.type,
-        created_at: r.created_at,
-        transaction_successful: r.transaction_successful,
-        from: r.from,
-        to: r.to,
-        amount: r.amount,
-        asset_code: r.asset_code,
-        asset_type: r.asset_type,
-      } as StellarTransaction
-    })
+      allRecords.push(...response.records);
+
+      // Get next page
+      response = await response.next();
+    }
+
+    const formatted = allRecords.map(
+      (r: any) =>
+        ({
+          transaction_hash: r.transaction_hash,
+          type: r.type,
+          created_at: r.created_at,
+          transaction_successful: r.transaction_successful,
+          from: r.from,
+          to: r.to,
+          amount: r.amount,
+          asset_code: r.asset_code,
+          asset_type: r.asset_type,
+        }) as StellarTransaction,
+    );
 
     // Filter by date if provided
-    return formatted.filter(t => {
-      const date = new Date(t.created_at)
-      if (startDate && date < startDate) return false
-      if (endDate && date > endDate) return false
-      return true
-    })
+    return formatted.filter((t) => {
+      const date = new Date(t.created_at);
+      if (startDate && date < startDate) return false;
+      if (endDate && date > endDate) return false;
+      return true;
+    });
   } catch (error) {
-    console.error('Error fetching Stellar transaction history:', error)
-    return []
+    console.error("Error fetching Stellar transaction history:", error);
+    return [];
+  }
+}
+
+/**
+ * Async generator to stream transaction history for memory-efficient processing.
+ * @param publicKey Stellar account public key
+ * @param startDate Optional start date filter
+ * @param endDate Optional end date filter
+ */
+export async function* streamFullTransactionHistory(
+  publicKey: string,
+  startDate?: Date,
+  endDate?: Date,
+): AsyncGenerator<StellarTransaction> {
+  try {
+    let response = await server
+      .payments()
+      .forAccount(publicKey)
+      .order("desc")
+      .limit(100)
+      .call();
+
+    while (response.records.length > 0) {
+      for (const r of response.records) {
+        const date = new Date(r.created_at);
+
+        // If we've passed the end date, skip (since we are desc, they will be later)
+        if (endDate && date > endDate) continue;
+
+        // If we've reached before start date, we are done
+        if (startDate && date < startDate) return;
+
+        yield {
+          transaction_hash: r.transaction_hash,
+          type: r.type,
+          created_at: r.created_at,
+          transaction_successful: r.transaction_successful,
+          from: r.from,
+          to: r.to,
+          amount: r.amount,
+          asset_code: r.asset_code,
+          asset_type: r.asset_type,
+        } as StellarTransaction;
+      }
+
+      response = await response.next();
+    }
+  } catch (error) {
+    console.error("Error streaming Stellar transaction history:", error);
   }
 }
 
@@ -645,11 +736,11 @@ export async function fetchFullTransactionHistory(
  * Interface for path payment quote
  */
 export interface PathPaymentQuote {
-  sourceAsset: Asset
-  sourceAmount: string
-  destinationAsset: Asset
-  destinationAmount: string
-  path: Asset[]
+  sourceAsset: Asset;
+  sourceAmount: string;
+  destinationAsset: Asset;
+  destinationAmount: string;
+  path: Asset[];
 }
 
 /**
@@ -666,24 +757,25 @@ export async function calculateStrictReceivePath(
   sourceAsset: Asset,
   destinationAsset: Asset,
   destinationAmount: string,
-  sourcePublicKey: string
+  sourcePublicKey: string,
 ): Promise<PathPaymentQuote> {
   try {
     // Query Horizon for strict receive paths using source account
     const pathsCallBuilder = server
       .strictReceivePaths(sourcePublicKey, destinationAsset, destinationAmount)
-      .limit(1)
+      .limit(1);
 
-    const pathsResponse = await pathsCallBuilder.call()
+    const pathsResponse = await pathsCallBuilder.call();
 
     if (pathsResponse.records.length === 0) {
       throw {
         type: "payment_failed",
-        message: "No path found for this asset pair. The destination asset may not have sufficient liquidity on the DEX.",
-      } as StellarError
+        message:
+          "No path found for this asset pair. The destination asset may not have sufficient liquidity on the DEX.",
+      } as StellarError;
     }
 
-    const bestPath = pathsResponse.records[0]
+    const bestPath = pathsResponse.records[0];
 
     return {
       sourceAsset,
@@ -691,22 +783,22 @@ export async function calculateStrictReceivePath(
       destinationAsset,
       destinationAmount,
       path: bestPath.path.map((p: any) =>
-        p.asset_type === 'native'
+        p.asset_type === "native"
           ? Asset.native()
-          : new Asset(p.asset_code, p.asset_issuer)
+          : new Asset(p.asset_code, p.asset_issuer),
       ),
-    }
+    };
   } catch (error: unknown) {
-    console.error("Error calculating strict receive path:", error)
+    console.error("Error calculating strict receive path:", error);
 
     if (error && typeof error === "object" && "type" in error) {
-      throw error
+      throw error;
     }
 
     throw {
       type: "network_error",
       message: "Failed to calculate path payment route.",
-    } as StellarError
+    } as StellarError;
   }
 }
 
@@ -730,18 +822,18 @@ export async function sendPathPayment(
   sendMax: string,
   destAsset: Asset,
   destAmount: string,
-  path?: Asset[]
+  path?: Asset[],
 ): Promise<string> {
   if (!isValidStellarAddress(toPublicKey)) {
     throw {
       type: "invalid_address",
       message: "Invalid recipient Stellar address.",
-    } as StellarError
+    } as StellarError;
   }
 
   try {
-    const senderKeypair = Keypair.fromSecret(fromSecretKey)
-    const account = await server.loadAccount(senderKeypair.publicKey())
+    const senderKeypair = Keypair.fromSecret(fromSecretKey);
+    const account = await server.loadAccount(senderKeypair.publicKey());
 
     const transaction = new TransactionBuilder(account, {
       fee: BASE_FEE,
@@ -755,30 +847,30 @@ export async function sendPathPayment(
           destAsset,
           destAmount,
           path: path || [],
-        })
+        }),
       )
       .setTimeout(30)
-      .build()
+      .build();
 
-    transaction.sign(senderKeypair)
+    transaction.sign(senderKeypair);
 
-    const txResult = await server.submitTransaction(transaction)
+    const txResult = await server.submitTransaction(transaction);
 
-    return txResult.hash
+    return txResult.hash;
   } catch (err: unknown) {
-    console.error("Error sending path payment:", err)
+    console.error("Error sending path payment:", err);
 
-    let message = "Failed to send path payment."
+    let message = "Failed to send path payment.";
 
     if (err && typeof err === "object") {
-      const stellarError = err as StellarErrorResponse
+      const stellarError = err as StellarErrorResponse;
       const opsMessage =
-        stellarError.response?.data?.extras?.result_codes?.operations?.[0]
+        stellarError.response?.data?.extras?.result_codes?.operations?.[0];
       if (opsMessage) {
-        message = `${message} Reason: ${opsMessage}`
+        message = `${message} Reason: ${opsMessage}`;
       }
     }
 
-    throw { type: "payment_failed", message } as StellarError
+    throw { type: "payment_failed", message } as StellarError;
   }
 }
