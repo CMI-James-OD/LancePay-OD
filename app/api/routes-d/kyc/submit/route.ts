@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { submitKYCData } from "@/lib/sep12-kyc";
+import { getAuthContext } from "@/app/api/routes-d/auto-swap/_shared";
+import { prisma } from "@/lib/db";
 
 /**
  * POST /api/kyc/submit
@@ -7,17 +9,34 @@ import { submitKYCData } from "@/lib/sep12-kyc";
  */
 export async function POST(req: NextRequest) {
   try {
-    const formData = await req.formData();
+    const auth = await getAuthContext(req);
+    if ("error" in auth) {
+      return NextResponse.json({ error: auth.error }, { status: 401 });
+    }
 
-    const stellarAddress = req.headers.get("x-stellar-address");
     const authToken = req.headers.get("x-sep10-token");
-
-    if (!stellarAddress || !authToken) {
+    if (!authToken) {
       return NextResponse.json(
-        { error: "Stellar address and auth token required" },
+        { error: "SEP-10 auth token required" },
         { status: 400 }
       );
     }
+
+    // Derive stellarAddress from the authenticated user's wallet — never trust headers
+    const wallet = await prisma.wallet.findUnique({
+      where: { userId: auth.user.id },
+      select: { stellarAddress: true },
+    });
+
+    if (!wallet?.stellarAddress) {
+      return NextResponse.json(
+        { error: "No Stellar wallet found for this account" },
+        { status: 404 }
+      );
+    }
+
+    const stellarAddress = wallet.stellarAddress;
+    const formData = await req.formData();
 
     // Extract form data
     const kycData = {
