@@ -17,8 +17,6 @@ export async function POST(request: NextRequest) {
     if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message || 'Invalid request' }, { status: 400 })
 
     const { invoiceId, reason, requestedAction, evidence } = parsed.data
-
-    // Always derive initiatorEmail from authenticated session — never trust request body
     const initiatorEmail = auth.email
 
     const invoice = await prisma.invoice.findUnique({
@@ -73,6 +71,18 @@ export async function POST(request: NextRequest) {
           attachments: evidence ?? undefined,
         },
       })
+
+      if (invoice.escrowEnabled) {
+        await tx.escrowEvent.create({
+          data: {
+            invoiceId: invoice.id,
+            eventType: 'disputed',
+            actorType: initiatedBy,
+            actorEmail: initiatorEmail,
+            notes: `Dispute opened: ${reason}`,
+          },
+        })
+      }
 
       return dispute
     })
