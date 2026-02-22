@@ -16,12 +16,8 @@ export async function POST(request: NextRequest) {
     const parsed = DisputeCreateSchema.safeParse(body)
     if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message || 'Invalid request' }, { status: 400 })
 
-    const { invoiceId, initiatorEmail, reason, requestedAction, evidence } = parsed.data
-
-    // Prevent spoofing
-    if (initiatorEmail.toLowerCase() !== auth.email.toLowerCase()) {
-      return NextResponse.json({ error: 'initiatorEmail must match authenticated user email' }, { status: 403 })
-    }
+    const { invoiceId, reason, requestedAction, evidence } = parsed.data
+    const initiatorEmail = auth.email
 
     const invoice = await prisma.invoice.findUnique({
       where: { id: invoiceId },
@@ -75,6 +71,18 @@ export async function POST(request: NextRequest) {
           attachments: evidence ?? undefined,
         },
       })
+
+      if (invoice.escrowEnabled) {
+        await tx.escrowEvent.create({
+          data: {
+            invoiceId: invoice.id,
+            eventType: 'disputed',
+            actorType: initiatedBy,
+            actorEmail: initiatorEmail,
+            notes: `Dispute opened: ${reason}`,
+          },
+        })
+      }
 
       return dispute
     })

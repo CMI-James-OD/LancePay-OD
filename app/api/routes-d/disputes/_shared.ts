@@ -56,7 +56,6 @@ export function senderTypeForDispute(params: {
 
 export const DisputeCreateSchema = z.object({
   invoiceId: z.string().min(1),
-  initiatorEmail: z.string().email(),
   reason: z.string().min(5).max(5000),
   requestedAction: z.enum(['refund', 'partial_refund', 'revision']),
   evidence: z.array(z.string().url()).optional(),
